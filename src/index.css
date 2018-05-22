@@ -1,0 +1,25 @@
+body {
+  font-family: 'Lato', sans-serif;
+}
+
+.blankslate {
+  text-align: center;
+  padding: 35.5px 0;
+}
+
+#player {
+  border-radius: .25rem;
+}
+
+.videoInput {
+  border-bottom: none;
+}
+
+.row {
+  margin-top: 30px;
+}
+
+.chat {
+  height: 185px;
+  overflow: scroll;
+}
