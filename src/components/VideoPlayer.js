@@ -9,10 +9,10 @@ import {
   YT_PAUSE,
   YT_PLAY
 } from '../events';
+import { PUBLIC_URL, SERVER_URL } from '../environment';
 import React, { Component } from 'react';
 
 import { Link } from 'react-router-dom';
-import { SERVER_URL } from '../environment';
 import YouTube from 'react-youtube';
 
 class VideoPlayer extends Component {
@@ -31,27 +31,42 @@ class VideoPlayer extends Component {
         },
         users: [],
         chat: []
+      },
+      clipboard: {
+        isCopying: false,
+        resetButtonTimeout: null,
+        buttonMessage: 'Copy Link to Clipboard'
       }
     }
+
+    this.evtSource = null;
 
     this.hadHandshake = false;
     this.sendEvent = false;
 
-    this.connect = this.connect.bind(this);
-    this.onServerEvent = this.onServerEvent.bind(this);
-    this.onReady = this.onReady.bind(this);
-    this.onStateChange = this.onStateChange.bind(this);
     this.onChat = this.onChat.bind(this);
-    this.onSubmitVideo = this.onSubmitVideo.bind(this);
-    this.postEvent = this.postEvent.bind(this);
     this.onPlay = this.onPlay.bind(this);
-
-    this.connect();
+    this.onReady = this.onReady.bind(this);
+    this.postEvent = this.postEvent.bind(this);
+    this.onStateChange = this.onStateChange.bind(this);
+    this.onSubmitVideo = this.onSubmitVideo.bind(this);
+    this.onServerEvent = this.onServerEvent.bind(this);
+    this.onServerError = this.onServerError.bind(this);
+    this.onCopyToClipboard = this.onCopyToClipboard.bind(this);
   }
 
-  connect() {
-    const evtSource = new EventSource(`${ SERVER_URL }?channelId=${ this.props.channelId }&clientId=${ this.props.username }`);
-    evtSource.onmessage = this.onServerEvent;
+  componentDidMount() {
+    this.evtSource = new EventSource(`${ SERVER_URL }?channelId=${ this.props.channelId }&clientId=${ this.props.username }`);
+    this.evtSource.onmessage = this.onServerEvent;
+    this.evtSource.onerror = this.onServerError;
+  }
+
+  componentWillUnmount() {
+    this.evtSource.close();
+  }
+
+  onServerError(e) {
+    
   }
 
   onServerEvent(e) {
@@ -194,6 +209,37 @@ class VideoPlayer extends Component {
     })
   }
 
+  onCopyToClipboard(e) {
+
+    const copyText = this.refs.copyInput;
+
+    this.setState({
+      clipboard: {
+        isCopying: true,
+        resetButtonTimeout: null
+      }
+    }, () => {
+
+      copyText.select();
+      document.execCommand('copy');
+      this.setState({
+        clipboard: {
+          isCopying: false,
+          buttonMessage: "Copied!",
+          resetButtonTimeout: setTimeout(() => {
+
+            this.setState({
+              clipboard: {
+                ...this.state.clipboard,
+                buttonMessage: "Copy Link to Clipboard"
+              }
+            });
+          }, 1500)
+        }
+      });
+    });
+  }
+
   onReady(e) {
     if (this.state.player !== e.target) {
       this.setState({
@@ -203,13 +249,10 @@ class VideoPlayer extends Component {
   }
 
   onPlay() {
-    console.log("TEST");
     this.state.player.playVideo();
   }
 
   onStateChange(e) {
-
-    console.log(e);
 
     switch (e.data) {
       case 1:
@@ -259,6 +302,8 @@ class VideoPlayer extends Component {
   }
 
   onSubmitVideo(e) {
+
+    e.preventDefault();
 
     const url = require('url');
     const query = url.parse(this.state.submitInput, true).query;
@@ -322,7 +367,7 @@ class VideoPlayer extends Component {
       />
     ) : (
       <div className="blankslate video-blankslate">
-        <h3>No Video</h3>
+        <h3>New Channel Created!</h3>
         <p>Get started by submitting a video.</p>
       </div>
     );
@@ -350,18 +395,26 @@ class VideoPlayer extends Component {
           <div className="container">
             <div className="row">
               <div className="col-md-12">
-                <Card>
-                  <CardHeader className="videoInput">
-                    <InputGroup>
-                      <Input value={ this.state.submitInput } onChange={(e) => this.setState({ submitInput: e.target.value}) } />
-                      <InputGroupAddon addonType="append" onClick={(e) => this.onSubmitVideo(e) }><Button>Watch</Button></InputGroupAddon>
-                    </InputGroup>
+                <Card className="videoInput">
+                  <CardHeader>
+                    <form onSubmit={ this.onSubmitVideo }>
+                      <InputGroup>
+                        <Input value={ this.state.submitInput } onChange={(e) => this.setState({ submitInput: e.target.value}) } required />
+                        <InputGroupAddon addonType="append"><Button>Watch</Button></InputGroupAddon>
+                      </InputGroup>
+                    </form>
                   </CardHeader>
                 </Card>
               </div>
             </div>
             <div className="row">
               <div className="col-md-4">
+                <Card>
+                  <CardHeader>Invite your friends</CardHeader>
+                  <CardBody>
+                    <Button color="danger btn-block" onClick={ this.onCopyToClipboard }>{ this.state.clipboard.buttonMessage }</Button>
+                  </CardBody>
+                </Card>
                 <Card>
                   <CardHeader>Folks in this channel</CardHeader>
                   <ul className="list-group list-group-flush">
@@ -378,7 +431,7 @@ class VideoPlayer extends Component {
                   <CardFooter>
                     <form onSubmit={ this.onChat }>
                       <InputGroup>
-                        <Input value={ this.state.chatInput } onChange={(e) => this.setState({ chatInput: e.target.value}) } />
+                        <Input value={ this.state.chatInput } onChange={(e) => this.setState({ chatInput: e.target.value}) } required />
                         <InputGroupAddon addonType="append" type="submit"><Button>Send</Button></InputGroupAddon>
                       </InputGroup>
                     </form>
@@ -388,6 +441,8 @@ class VideoPlayer extends Component {
             </div>
           </div>
         </main>
+
+        <input ref="copyInput" value={ `${ PUBLIC_URL }/channel/${ this.props.channelId }`} readOnly style={ this.state.clipboard.isCopying ? {} : { display: 'none' }}/>
       </div>
     );
   }
