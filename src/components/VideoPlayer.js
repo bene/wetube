@@ -1,18 +1,9 @@
 import { Badge, Button, Card, CardBody, CardFooter, CardHeader, Input, InputGroup, InputGroupAddon } from 'reactstrap';
-import {
-  CHANGE_VIDEO,
-  CHAT,
-  CLIENT_LIST,
-  CONNECT,
-  DISCONNECT,
-  VIDEO_ID_HANDSHAKE,
-  YT_PAUSE,
-  YT_PLAY
-} from '../events';
-import { PUBLIC_URL, SERVER_URL } from '../environment';
 import React, { Component } from 'react';
 
+import ChannelStore from '../stores/ChannelStore';
 import { Link } from 'react-router-dom';
+import { PUBLIC_URL } from '../environment';
 import YouTube from 'react-youtube';
 
 class VideoPlayer extends Component {
@@ -21,192 +12,33 @@ class VideoPlayer extends Component {
 
     super(props);
 
+    this.store = new ChannelStore(this, this.props.username, this.props.channelId);
     this.state = {
       player: null,
+      channel: this.store.getData(),
       submitInput: "",
       chatInput: "",
-      channel: {
-        video: {
-          id: ""
-        },
-        users: [],
-        chat: []
-      },
       clipboard: {
         isCopying: false,
         resetButtonTimeout: null,
         buttonMessage: 'Copy Link to Clipboard'
       }
-    }
-
-    this.evtSource = null;
-
-    this.hadHandshake = false;
-    this.sendEvent = false;
+    };
 
     this.onChat = this.onChat.bind(this);
     this.onPlay = this.onPlay.bind(this);
     this.onReady = this.onReady.bind(this);
-    this.postEvent = this.postEvent.bind(this);
     this.onStateChange = this.onStateChange.bind(this);
     this.onSubmitVideo = this.onSubmitVideo.bind(this);
-    this.onServerEvent = this.onServerEvent.bind(this);
-    this.onServerError = this.onServerError.bind(this);
     this.onCopyToClipboard = this.onCopyToClipboard.bind(this);
   }
 
   componentDidMount() {
-    this.evtSource = new EventSource(`${ SERVER_URL }?channelId=${ this.props.channelId }&clientId=${ this.props.username }`);
-    this.evtSource.onmessage = this.onServerEvent;
-    this.evtSource.onerror = this.onServerError;
+    this.store.connect();
   }
 
   componentWillUnmount() {
-    this.evtSource.close();
-  }
-
-  onServerError(e) {
-    
-  }
-
-  onServerEvent(e) {
-
-    const data = JSON.parse(e.data);
-
-    const origin = data.origin;
-    const payload = data.payload ? data.payload : {};
-
-    switch (data.type) {
-      case VIDEO_ID_HANDSHAKE:
-
-        if (!this.hadHandshake) {
-
-          this.hadHandshake = true;
-
-          this.setState({
-            channel: {
-              ...this.state.channel,
-              video: {
-                id: payload
-              }
-            }
-          });
-        }
-
-        break;
-      case CONNECT:
-
-        if (this.state.channel.video.id) {
-          this.postEvent("VIDEO_ID_HANDSHAKE", this.state.channel.video.id)
-        }
-
-        if (!this.state.channel.users.includes(origin)) {
-          this.setState({
-            channel: {
-              ...this.state.channel,
-              users: [...this.state.channel.users, origin]
-            }
-          })
-        }
-
-        if (this.props.username !== origin) {
-          this.setState({
-            channel: {
-              ...this.state.channel,
-              chat: [...this.state.channel.chat, `${origin} has entered the channel.`]
-            }
-          });
-        }
-
-        break;
-      case DISCONNECT:
-
-        const index = this.state.channel.chat.indexOf(origin);
-
-        if (this.state.channel.users.includes(origin)) {
-
-          const users = this.state.channel.users;
-          users.splice(index, 1);
-
-          this.setState({
-            channel: {
-              ...this.state.channel,
-              users
-            }
-          })
-        }
-
-        this.setState({
-          channel: {
-            ...this.state.channel,
-            chat: [...this.state.channel.chat, `${origin} has left the channel.`]
-          }
-        });
-
-        break;
-      case CHAT:
-
-        this.setState({
-          channel: {
-            ...this.state.channel,
-            chat: [`${origin}: ${payload}`, ...this.state.channel.chat]
-          }
-        });
-        break;
-      case YT_PLAY:
-        if (origin !== this.props.username && this.state.player.getPlayerState !== 1) {
-          console.log("PLAY");
-          this.state.player.seekTo(payload);
-          this.state.player.playVideo();
-        }
-        break;
-      case YT_PAUSE:
-        if (origin !== this.props.username && this.state.player.getPlayerState !== 2) {
-          console.log("PAUSE");
-          console.log(origin);
-          this.state.player.seekTo(payload);
-          this.state.player.pauseVideo();
-        }
-        break;
-      case CHANGE_VIDEO:
-        const videoId = data.payload;
-        this.setState({
-          channel: {
-            ...this.state.channel,
-            video: {
-              id: videoId
-            }
-          }
-        });
-        break;
-      case CLIENT_LIST:
-        const users = data.payload;
-
-        this.setState(state => ({
-          channel: {
-            ...state.channel,
-            users: users
-          }
-        }));
-        break;
-      default:
-
-    }
-  }
-
-  postEvent(type, payload) {
-
-    fetch(`http://localhost:8080`, {
-      method: "POST",
-      body: JSON.stringify({
-        channel_id: this.props.channelId,
-        origin: this.props.username,
-        type,
-        payload
-      })
-    }).catch(err => {
-      console.log(err);
-    })
+    this.store.close();
   }
 
   onCopyToClipboard(e) {
@@ -256,12 +88,10 @@ class VideoPlayer extends Component {
 
     switch (e.data) {
       case 1:
-        this.postEvent("YT_PLAY", e.target.getCurrentTime())
-        this.state.player.playVideo();
-        console.log("IUHDSU");
+
         break;
       case 2:
-        this.postEvent("YT_PAUSE", e.target.getCurrentTime())
+
         break;
       case 3:
 
@@ -278,27 +108,10 @@ class VideoPlayer extends Component {
 
     e.preventDefault();
 
-    const msg = this.state.chatInput;
-
-    if (msg.length === 0) {
-      return;
-    }
-
+    this.store.sendChatMessage(this.state.chatInput);
     this.setState({
       chatInput: ""
     });
-
-    if (msg.toUpperCase() === "/CLEAR") {
-      this.setState({
-        channel: {
-          ...this.state.channel,
-          chat: []
-        }
-      });
-      return
-    }
-
-    this.postEvent("CHAT", msg);
   }
 
   onSubmitVideo(e) {
@@ -309,7 +122,7 @@ class VideoPlayer extends Component {
     const query = url.parse(this.state.submitInput, true).query;
     const videoId = query.v;
 
-    this.postEvent("CHANGE_VIDEO", videoId);
+    this.store.submitVideo(videoId);
   }
 
   render() {
@@ -320,7 +133,7 @@ class VideoPlayer extends Component {
       </li>
     ));
 
-    const chat = this.state.channel.chat.length > 0 ? this.state.channel.chat.map(msg => (
+    const chat = this.state.channel.chatMessages.length > 0 ? this.state.channel.chatMessages.map(msg => (
       <li key={ Math.random() }>
       { msg }
       </li>
@@ -342,11 +155,9 @@ class VideoPlayer extends Component {
     } else if (window.innerWidth >= 576) {
       containerWidth = 540;
     }
-
-    containerWidth = containerWidth - 30; // padding
-
+    
     const opts = {
-      height: (1080/1920)*containerWidth,
+      height: 1080 / 1920 * (containerWidth - 30),
       width: containerWidth,
       playerVars: {
         rel: 0,
@@ -356,10 +167,10 @@ class VideoPlayer extends Component {
       }
     };
 
-    const videoPlayer = this.state.channel.video.id ? (
+    const videoPlayer = this.state.channel.videoId ? (
       <YouTube
         id="player"
-        videoId={ this.state.channel.video.id }
+        videoId={ this.state.channel.videoId }
         opts={ opts }
         onReady={ this.onReady }
         onPlay={ this.onPlay }
@@ -442,7 +253,7 @@ class VideoPlayer extends Component {
           </div>
         </main>
 
-        <input ref="copyInput" value={ `${ PUBLIC_URL }/channel/${ this.props.channelId }`} readOnly style={ this.state.clipboard.isCopying ? {} : { display: 'none' }}/>
+        <input ref="copyInput" value={ `${ PUBLIC_URL }/channel/${ this.props.channelId }`} readOnly style={ this.state.clipboard.isCopying ? {} : { display: 'none' }} />
       </div>
     );
   }
